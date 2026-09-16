@@ -740,16 +740,18 @@ function totalesLista(items){
 function textoLista(){
   const items = itemsLista();
   const {unidades, valor} = totalesLista(items);
-  // cada dato en su propia línea, nada pegado
+  // cada dato en su propia línea, nada pegado; el código va primero
   const lineas = items.map(({r,cant},n)=>{
     const filas = [
-      `*${n+1}. ${r.p||r.c}*`,
-      `Cantidad: ${fmt(cant)}`,
-      `Unidad: ${r.u||'—'}`,
+      `*${n+1}. Código: ${r.c||'—'}*`,
+      `N° Parte: ${r.p||'—'}`,
       `Descripción: ${r.d}`,
+      `Unidad: ${r.u||'—'}`,
+      `Cantidad: ${fmt(cant)}`,
       `Almacén: ${r.s}`,
     ];
     if(r.l) filas.push(`Ubicación: ${r.l}`);
+    if(r.a && r.a!==r.s) filas.push(`Área: ${r.a}`);
     return filas.join('\n');
   });
   return `*LISTA DE REPUESTOS*\n${new Date().toLocaleDateString('es-NI')}\n\n`+
@@ -762,8 +764,8 @@ function textoTabla(){
   const items = itemsLista();
   const {unidades, valor} = totalesLista(items);
   const filas = items.map(({r,cant})=>
-    [r.p||'', cant, r.u||'', r.d, r.s, r.l||'', r.a||'', r.c||''].join('\t'));
-  return `N° PARTE\tCANT\tUND\tDESCRIPCION\tALMACEN\tUBICACION\tAREA\tCODIGO\n`+
+    [r.c||'', r.p||'', r.d, r.u||'', cant, r.s, r.l||'', r.a||''].join('\t'));
+  return `CODIGO\tN° PARTE\tDESCRIPCION\tUND\tCANTIDAD\tALMACEN\tUBICACION\tAREA\n`+
          filas.join('\n')+
          `\n\n${items.length} repuestos\t${unidades} unidades\ttotal ${fmt(valor)}`;
 }
