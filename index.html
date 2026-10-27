@@ -262,6 +262,24 @@
   .vaddbtn:hover{border-color:var(--amber);color:var(--amber)}
   .vaddbtn.in{background:var(--amber);border-color:var(--amber);color:#1a1400}
   @media (max-width:720px){ .vhead p{font-size:12px} }
+  /* filtro de almacenes (varios a la vez) en Verificar lista */
+  .vfilter{position:relative;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .vfhint{font-size:11.5px;color:var(--muted-2)}
+  .vsitepanel{position:absolute;top:100%;left:0;margin-top:6px;z-index:40;width:min(520px,100%);
+    background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px;
+    box-shadow:0 12px 30px rgba(0,0,0,.45)}
+  .vsitepanel .vsacts{display:flex;gap:8px;margin-bottom:8px}
+  .vsitepanel .vsacts button{background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:5px 10px;font-family:var(--disp);font-size:11px;letter-spacing:.8px;
+    text-transform:uppercase;cursor:pointer}
+  .vsitepanel .vsacts button:hover{border-color:var(--amber);color:var(--amber)}
+  .vsgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;max-height:280px;overflow:auto}
+  .vsgrid label{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;cursor:pointer;
+    font-size:12.5px;color:var(--text)}
+  .vsgrid label:hover{background:var(--panel-2)}
+  .vsgrid input{accent-color:var(--amber)}
+  .vfiltro-activo{color:var(--amber)}
+  @media (max-width:560px){ .vsgrid{grid-template-columns:1fr} }
 
   /* ---------- lista de repuestos (carrito) ---------- */
   .addbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);cursor:pointer;
@@ -430,6 +448,14 @@
         de número de parte — y te decimos qué hay y qué no en el inventario.</p>
       </div>
       <div class="vinput">
+        <div class="vfilter">
+          <button type="button" class="filtbtn" id="vsitebtn" title="Elegí uno o varios almacenes">Almacenes <span class="fa">&#9660;</span></button>
+          <span class="vfhint" id="vsitehint">Sin selección = se busca en todos los almacenes</span>
+          <div class="vsitepanel" id="vsitepanel" style="display:none">
+            <div class="vsacts"><button type="button" id="vsall">Marcar todos</button><button type="button" id="vsnone">Quitar todos</button></div>
+            <div class="vsgrid" id="vsgrid"></div>
+          </div>
+        </div>
         <textarea id="vtext" placeholder="Pegá aquí el contenido del CSV…"></textarea>
         <div class="vbtns">
           <label class="filebtn">Subir archivo CSV<input type="file" id="vfile" accept=".csv,text/csv" hidden></label>
@@ -444,7 +470,7 @@
 </main>
 
 <footer>
-  Datos tomados de la hoja <b>BASE DATOS</b> del archivo <b>STOCK_INVENTARIO_MINA_LL_EQUINOX_ACTUALIZADO.xlsx</b>, generado el 26/10/2026.<br>
+  Datos tomados de la hoja <b>BASE DATOS</b> del archivo <b>STOCK_INVENTARIO_MINA_LL_EQUINOX_ACTUALIZADO.xlsx</b>, generado el 27/10/2026.<br>
   El valor de <b>Costo</b> corresponde al costo unitario registrado en la base (la moneda no está especificada en el archivo de origen). Este archivo funciona sin conexión: todos los datos están incluidos.
 </footer>
 
@@ -982,6 +1008,13 @@ document.querySelectorAll('#apptabs .tab').forEach(b=>{
    propio "Copiar p/ Excel" de esta app…) y cada fila se cruza contra el
    inventario para saber si hay o no hay existencia.                        */
 let verifyRows = [];
+const vSites = new Set();            // vacío = todos los almacenes
+
+(function initFiltroAlmacen(){
+  const sitios = [...new Set(DATA.map(r=>r.s).filter(Boolean))].sort();
+  document.getElementById('vsgrid').innerHTML = sitios.map(s=>
+    `<label><input type="checkbox" value="${esc(s)}"> ${esc(s)}</label>`).join('');
+})();
 
 function detectarDelimitador(texto){
   const muestra = texto.split(/\r?\n/).slice(0, 15).join('\n');
@@ -1037,10 +1070,11 @@ function detectarEncabezado(filas){
   return null;
 }
 
-function buscarPorClave(k){
+function buscarPorClave(k, aplicarFiltro = true){
   if(!k || k.length < 2) return [];
   let m = DATA.filter(r => r._n && r._n === k);
   if(!m.length) m = DATA.filter(r => r._codeKey && r._codeKey === k);
+  if(aplicarFiltro && vSites.size) m = m.filter(r => vSites.has(r.s));
   return m;
 }
 
@@ -1065,8 +1099,10 @@ function verificarCSV(texto){
     const qty = enc.cant !== null ? (parseFloat(String(fila[enc.cant]).replace(',', '.')) || 0) : null;
     const desc = enc.desc !== null ? (fila[enc.desc] || '').toString().trim() : '';
     const matches = buscarPorClave(key(partNo));
+    // con filtro de almacenes: ¿existe, pero sólo en almacenes que no se eligieron?
+    const fuera = !matches.length && vSites.size > 0 && buscarPorClave(key(partNo), false).length > 0;
     verifyRows.push({
-      partNo, qty, desc, matches, hay: matches.length > 0,
+      partNo, qty, desc, matches, fuera, hay: matches.length > 0,
       existencia: matches.reduce((a,r)=>a+(Number(r.q)||0), 0),
     });
   }
@@ -1078,8 +1114,10 @@ function pintarVerificacion(){
   if(!verifyRows.length){ out.innerHTML = ''; return; }
 
   const hay = verifyRows.filter(v=>v.hay).length;
+  const filtroTxt = vSites.size
+    ? `<span class="vfiltro-activo"><b>${vSites.size}</b>almacén${vSites.size===1?'':'es'} elegido${vSites.size===1?'':'s'}: ${[...vSites].sort().map(esc).join(', ')}</span>` : '';
   out.innerHTML =
-    `<div class="vsummary">
+    `<div class="vsummary">${filtroTxt}
        <span class="ok"><b>${hay}</b>con existencia</span>
        <span class="no"><b>${verifyRows.length-hay}</b>sin existencia</span>
        <span><b>${verifyRows.length}</b>repuestos verificados</span>
@@ -1109,7 +1147,7 @@ function filaVerificacion(v, i){
     <td>${v.qty===null ? '—' : fmt(v.qty)}</td>
     <td><span class="vbadge ${v.hay?'si':'no'}">${v.hay?'Hay':'No hay'}</span></td>
     <td>${v.hay ? fmt(v.existencia) : '—'}</td>
-    <td class="vwhere">${donde || '—'}</td>
+    <td class="vwhere">${donde || (v.fuera ? 'Sólo en almacenes no elegidos' : '—')}</td>
     <td>${v.hay ? `<button class="vaddbtn ${enLista?'in':''}" data-vadd="${i}" title="Agregar a mi lista">${enLista?'&#10003;':'+'}</button>` : ''}</td>
   </tr>`;
 }
@@ -1233,6 +1271,39 @@ function agregarDesdeVerificacion(i){
   pintarVerificacion();
   avisar('Agregado a tu lista: ' + (m.p || m.c));
 }
+
+/* filtro de almacenes de la pestaña Verificar (se pueden marcar varios) */
+const vPanel = document.getElementById('vsitepanel'), vBtn = document.getElementById('vsitebtn');
+function pintarFiltroAlmacen(){
+  const n = vSites.size;
+  vBtn.innerHTML = 'Almacenes' + (n ? ` <span class="badge">${n}</span>` : '') +
+                   ` <span class="fa">${vPanel.style.display==='none'?'&#9660;':'&#9650;'}</span>`;
+  vBtn.classList.toggle('on', n>0);
+  document.getElementById('vsitehint').textContent = n
+    ? (n===1 ? 'Buscando sólo en ' : 'Buscando sólo en ') + [...vSites].sort().join(', ')
+    : 'Sin selección = se busca en todos los almacenes';
+}
+function refiltrarVerificacion(){
+  pintarFiltroAlmacen();
+  const txt = document.getElementById('vtext').value;
+  if(verifyRows.length && txt.trim()) verificarCSV(txt);
+}
+vBtn.onclick = e=>{ e.stopPropagation(); vPanel.style.display = vPanel.style.display==='none' ? '' : 'none'; pintarFiltroAlmacen(); };
+vPanel.addEventListener('click', e=>e.stopPropagation());
+document.addEventListener('click', ()=>{ if(vPanel.style.display!=='none'){ vPanel.style.display='none'; pintarFiltroAlmacen(); } });
+document.getElementById('vsgrid').addEventListener('change', e=>{
+  const cb = e.target.closest('input[type=checkbox]'); if(!cb) return;
+  cb.checked ? vSites.add(cb.value) : vSites.delete(cb.value);
+  refiltrarVerificacion();
+});
+document.getElementById('vsall').onclick = ()=>{
+  document.querySelectorAll('#vsgrid input').forEach(c=>{ c.checked=true; vSites.add(c.value); });
+  refiltrarVerificacion();
+};
+document.getElementById('vsnone').onclick = ()=>{
+  document.querySelectorAll('#vsgrid input').forEach(c=>{ c.checked=false; });
+  vSites.clear(); refiltrarVerificacion();
+};
 
 /* eventos de la pestaña Verificar */
 document.getElementById('vcheck').onclick = ()=>{
